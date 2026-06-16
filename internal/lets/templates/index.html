@@ -173,6 +173,18 @@
       background: var(--accent-dark);
     }
 
+    .calendar-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 0;
+    }
+
+    .calendar-links a {
+      color: var(--accent);
+      font-weight: 750;
+    }
+
     @media (max-width: 560px) {
       .slot,
       summary {
@@ -188,7 +200,15 @@
     <p class="intro">A tiny public Wednesday lunch calendar. Pick an available date, leave your name and a place, and it is yours.</p>
 
     {{if .Saved}}
-      <p class="message success">Saved. See you then.</p>
+      <div class="message success">
+        <p>Saved. See you then.</p>
+        {{with .SavedCalendar}}
+          <div class="calendar-links" aria-label="Add lunch to calendar">
+            <a href="{{.GoogleCalendarLink}}">Google</a>
+            <a href="{{.OutlookCalendarLink}}">Outlook</a>
+          </div>
+        {{end}}
+      </div>
     {{end}}
 
     {{if .Error}}

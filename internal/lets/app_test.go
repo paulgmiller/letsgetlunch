@@ -1,6 +1,10 @@
 package lets
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -108,5 +112,104 @@ func TestValidateSubmission(t *testing.T) {
 				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestCalendarEventLinks(t *testing.T) {
+	dates := []WednesdayDate{
+		{
+			Value:             "2026-06-17",
+			Label:             "Wednesday, Jun 17, 2026",
+			Reserved:          true,
+			Contact:           "Pat",
+			SuggestedLocation: "Tacos",
+		},
+	}
+
+	event := calendarEventForDate("2026-06-17", dates)
+	if event == nil {
+		t.Fatal("expected calendar event")
+	}
+	if event.Start.Hour() != 12 || event.End.Hour() != 13 {
+		t.Fatalf("event = %s to %s, want noon to 1pm", event.Start, event.End)
+	}
+
+	google, err := url.Parse(event.GoogleCalendarLink())
+	if err != nil {
+		t.Fatalf("parse google link: %v", err)
+	}
+	if google.Host != "www.google.com" {
+		t.Fatalf("google host = %q", google.Host)
+	}
+	if got := google.Query().Get("text"); got != "Lunch" {
+		t.Fatalf("google text = %q", got)
+	}
+	if got := google.Query().Get("location"); got != "Tacos" {
+		t.Fatalf("google location = %q", got)
+	}
+
+	outlook, err := url.Parse(event.OutlookCalendarLink())
+	if err != nil {
+		t.Fatalf("parse outlook link: %v", err)
+	}
+	if outlook.Host != "outlook.live.com" {
+		t.Fatalf("outlook host = %q", outlook.Host)
+	}
+	if got := outlook.Query().Get("subject"); got != "Lunch" {
+		t.Fatalf("outlook subject = %q", got)
+	}
+	if got := outlook.Query().Get("location"); got != "Tacos" {
+		t.Fatalf("outlook location = %q", got)
+	}
+}
+
+func TestReserveRedirectShowsCalendarLinks(t *testing.T) {
+	db, err := OpenSQLite(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	app, err := NewApp(db)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.June, 15, 10, 30, 0, 0, time.Local)
+	}
+
+	form := url.Values{}
+	form.Set("date", "2026-06-17")
+	form.Set("contact", "pat@example.com")
+	form.Set("suggested_location", "Tacos")
+	req := httptest.NewRequest(http.MethodPost, "/requests", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusSeeOther)
+	}
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "saved=1") || !strings.Contains(location, "date=2026-06-17") {
+		t.Fatalf("redirect location = %q", location)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, location, nil)
+	rec = httptest.NewRecorder()
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Saved. See you then.",
+		"https://www.google.com/calendar/render?",
+		"https://outlook.live.com/calendar/0/deeplink/compose?",
+		"Reserved by pat@example.com",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body does not contain %q:\n%s", want, body)
+		}
 	}
 }

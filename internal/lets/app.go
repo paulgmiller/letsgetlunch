@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,6 +46,15 @@ type pageData struct {
 	SuggestedLocation string
 	Error             string
 	Saved             bool
+	SavedCalendar     *CalendarEvent
+}
+
+type CalendarEvent struct {
+	Title    string
+	Start    time.Time
+	End      time.Time
+	Details  string
+	Location string
 }
 
 func OpenSQLite(path string) (*gorm.DB, error) {
@@ -87,6 +97,9 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := pageData{
 		Dates: dates,
 		Saved: r.URL.Query().Get("saved") == "1",
+	}
+	if data.Saved {
+		data.SavedCalendar = calendarEventForDate(r.URL.Query().Get("date"), dates)
 	}
 	a.renderIndex(w, data)
 }
@@ -135,7 +148,12 @@ func (a *App) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/?saved=1", http.StatusSeeOther)
+	redirect := url.URL{Path: "/"}
+	query := redirect.Query()
+	query.Set("saved", "1")
+	query.Set("date", selected.Format("2006-01-02"))
+	redirect.RawQuery = query.Encode()
+	http.Redirect(w, r, redirect.String(), http.StatusSeeOther)
 }
 
 func (a *App) renderIndex(w http.ResponseWriter, data pageData) {
@@ -233,6 +251,58 @@ func validateSubmission(contact, selectedDate string, dates []WednesdayDate) (ti
 	}
 
 	return time.Time{}, fmt.Errorf("Please choose one of the available Wednesdays.")
+}
+
+func calendarEventForDate(selectedDate string, dates []WednesdayDate) *CalendarEvent {
+	for _, date := range dates {
+		if selectedDate != date.Value || !date.Reserved {
+			continue
+		}
+		start, err := time.ParseInLocation("2006-01-02 15:04", date.Value+" 12:00", time.Local)
+		if err != nil {
+			return nil
+		}
+
+		details := "Reserved by " + date.Contact
+		if date.SuggestedLocation != "" {
+			details += " at " + date.SuggestedLocation
+		}
+
+		return &CalendarEvent{
+			Title:    "Lunch",
+			Start:    start,
+			End:      start.Add(time.Hour),
+			Details:  details,
+			Location: date.SuggestedLocation,
+		}
+	}
+	return nil
+}
+
+func (e CalendarEvent) GoogleCalendarLink() string {
+	params := url.Values{}
+	params.Set("action", "TEMPLATE")
+	params.Set("text", e.Title)
+	params.Set("dates", fmt.Sprintf("%s/%s", e.Start.UTC().Format("20060102T150405Z"), e.End.UTC().Format("20060102T150405Z")))
+	params.Set("details", e.Details)
+	if e.Location != "" {
+		params.Set("location", e.Location)
+	}
+	return "https://www.google.com/calendar/render?" + params.Encode()
+}
+
+func (e CalendarEvent) OutlookCalendarLink() string {
+	params := url.Values{}
+	params.Set("path", "/calendar/action/compose")
+	params.Set("rru", "addevent")
+	params.Set("subject", e.Title)
+	params.Set("startdt", e.Start.Format("2006-01-02T15:04:05"))
+	params.Set("enddt", e.End.Format("2006-01-02T15:04:05"))
+	params.Set("body", e.Details)
+	if e.Location != "" {
+		params.Set("location", e.Location)
+	}
+	return "https://outlook.live.com/calendar/0/deeplink/compose?" + params.Encode()
 }
 
 func dateOnly(t time.Time) time.Time {
