@@ -51,6 +51,7 @@ func TestValidateSubmission(t *testing.T) {
 
 	tests := []struct {
 		name         string
+		dates        []WednesdayDate
 		contact      string
 		selectedDate string
 		wantErr      string
@@ -76,11 +77,24 @@ func TestValidateSubmission(t *testing.T) {
 			selectedDate: "2026-06-24",
 			wantErr:      "available Wednesdays",
 		},
+		{
+			name: "reserved date",
+			dates: []WednesdayDate{
+				{Value: "2026-06-17", Label: "Wednesday, Jun 17, 2026", Reserved: true},
+			},
+			contact:      "Pat",
+			selectedDate: "2026-06-17",
+			wantErr:      "already reserved",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := validateSubmission(tt.contact, tt.selectedDate, dates)
+			testDates := dates
+			if tt.dates != nil {
+				testDates = tt.dates
+			}
+			_, err := validateSubmission(tt.contact, tt.selectedDate, testDates)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("validateSubmission returned error: %v", err)

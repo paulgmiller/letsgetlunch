@@ -2,6 +2,7 @@ package lets
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -22,16 +23,19 @@ type App struct {
 }
 
 type LunchRequest struct {
-	ID                uint `gorm:"primaryKey"`
-	SelectedDate      time.Time
+	ID                uint      `gorm:"primaryKey"`
+	SelectedDate      time.Time `gorm:"uniqueIndex"`
 	Contact           string
 	SuggestedLocation string
 	CreatedAt         time.Time
 }
 
 type WednesdayDate struct {
-	Value string
-	Label string
+	Value             string
+	Label             string
+	Reserved          bool
+	Contact           string
+	SuggestedLocation string
 }
 
 type pageData struct {
@@ -74,8 +78,14 @@ func (a *App) Routes() http.Handler {
 }
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
+	dates, err := a.calendarDates()
+	if err != nil {
+		http.Error(w, "Could not load lunch calendar.", http.StatusInternalServerError)
+		return
+	}
+
 	data := pageData{
-		Dates: currentWednesdays(a.now()),
+		Dates: dates,
 		Saved: r.URL.Query().Get("saved") == "1",
 	}
 	a.renderIndex(w, data)
@@ -87,7 +97,12 @@ func (a *App) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dates := currentWednesdays(a.now())
+	dates, err := a.calendarDates()
+	if err != nil {
+		http.Error(w, "Could not load lunch calendar.", http.StatusInternalServerError)
+		return
+	}
+
 	data := pageData{
 		Dates:             dates,
 		SelectedDate:      strings.TrimSpace(r.FormValue("date")),
@@ -109,6 +124,13 @@ func (a *App) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		SuggestedLocation: data.SuggestedLocation,
 	}
 	if err := a.db.Create(&request).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique") {
+			data.Error = "That Wednesday was already reserved."
+			data.Dates, _ = a.calendarDates()
+			w.WriteHeader(http.StatusConflict)
+			a.renderIndex(w, data)
+			return
+		}
 		http.Error(w, "Could not save your lunch request.", http.StatusInternalServerError)
 		return
 	}
@@ -121,6 +143,45 @@ func (a *App) renderIndex(w http.ResponseWriter, data pageData) {
 	if err := a.templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		http.Error(w, "Could not render page.", http.StatusInternalServerError)
 	}
+}
+
+func (a *App) calendarDates() ([]WednesdayDate, error) {
+	dates := currentWednesdays(a.now())
+	if len(dates) == 0 {
+		return dates, nil
+	}
+
+	start, err := time.ParseInLocation("2006-01-02", dates[0].Value, time.Local)
+	if err != nil {
+		return nil, err
+	}
+	end, err := time.ParseInLocation("2006-01-02", dates[len(dates)-1].Value, time.Local)
+	if err != nil {
+		return nil, err
+	}
+
+	var requests []LunchRequest
+	if err := a.db.Where("selected_date >= ? AND selected_date <= ?", start, end).Order("created_at asc").Find(&requests).Error; err != nil {
+		return nil, err
+	}
+
+	reserved := make(map[string]LunchRequest, len(requests))
+	for _, request := range requests {
+		key := request.SelectedDate.Format("2006-01-02")
+		if _, exists := reserved[key]; !exists {
+			reserved[key] = request
+		}
+	}
+
+	for i := range dates {
+		if request, exists := reserved[dates[i].Value]; exists {
+			dates[i].Reserved = true
+			dates[i].Contact = request.Contact
+			dates[i].SuggestedLocation = request.SuggestedLocation
+		}
+	}
+
+	return dates, nil
 }
 
 func currentWednesdays(now time.Time) []WednesdayDate {
@@ -160,6 +221,9 @@ func validateSubmission(contact, selectedDate string, dates []WednesdayDate) (ti
 
 	for _, date := range dates {
 		if selectedDate == date.Value {
+			if date.Reserved {
+				return time.Time{}, fmt.Errorf("That Wednesday is already reserved.")
+			}
 			parsed, err := time.ParseInLocation("2006-01-02", selectedDate, time.Local)
 			if err != nil {
 				return time.Time{}, fmt.Errorf("Please choose a valid Wednesday.")
