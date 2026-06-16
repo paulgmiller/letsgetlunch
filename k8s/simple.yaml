@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: letsgetlunch-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: letsgetlunch
+  labels:
+    app: letsgetlunch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: letsgetlunch
+  template:
+    metadata:
+      labels:
+        app: letsgetlunch
+    spec:
+      containers:
+        - name: letsgetlunch
+          image: paulgmiller/letsgetlunch:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DATABASE_PATH
+              value: /data/lets.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: letsgetlunch-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: letsgetlunch
+  labels:
+    app: letsgetlunch
+spec:
+  selector:
+    app: letsgetlunch
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: letsgetlunch
+spec:
+  rules:
+    - host: lunch.northbriton.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: letsgetlunch
+                port:
+                  name: http

@@ -1,6 +1,10 @@
-# lets
 
-`lets` is an ultra-minimal public scheduling app for Wednesday lunches.
+
+# letsgetlunch
+
+http://lunch.northbriton.net
+
+`letsgetlunch` is an ultra-minimal public scheduling app for Wednesday lunches.
 
 The whole product idea is a public two-month lunch calendar:
 
