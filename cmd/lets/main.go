@@ -9,12 +9,15 @@ import (
 )
 
 func main() {
-	dbPath := os.Getenv("DATABASE_PATH")
-	if dbPath == "" {
-		dbPath = "lets.db"
+	dbSource := os.Getenv("DATABASE_URL")
+	if dbSource == "" {
+		dbSource = os.Getenv("DATABASE_PATH")
+	}
+	if dbSource == "" {
+		dbSource = "lets.db"
 	}
 
-	db, err := lets.OpenSQLite(dbPath)
+	db, err := lets.OpenDatabase(dbSource)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}

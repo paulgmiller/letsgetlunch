@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -58,7 +59,18 @@ type CalendarEvent struct {
 }
 
 func OpenSQLite(path string) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	return openDatabase(sqlite.Open(path))
+}
+
+func OpenDatabase(source string) (*gorm.DB, error) {
+	if strings.HasPrefix(source, "postgresql://") || strings.HasPrefix(source, "postgres://") {
+		return openDatabase(postgres.Open(source))
+	}
+	return OpenSQLite(source)
+}
+
+func openDatabase(dialector gorm.Dialector) (*gorm.DB, error) {
+	db, err := gorm.Open(dialector, &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, err
 	}

@@ -1,14 +1,3 @@
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: letsgetlunch-data
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,15 +24,8 @@ spec:
           env:
             - name: PORT
               value: "8080"
-            - name: DATABASE_PATH
-              value: /data/lets.db
-          volumeMounts:
-            - name: data
-              mountPath: /data
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: letsgetlunch-data
+            - name: DATABASE_URL
+              value: "postgresql://root@cockroachdb-public.cockroach.svc.cluster.local:26257/lunch?sslmode=disable"
 ---
 apiVersion: v1
 kind: Service

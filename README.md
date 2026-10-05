@@ -29,12 +29,23 @@ Optional environment variables:
 
 - `PORT` changes the listen port
 - `ADDR` sets the full listen address and overrides `PORT`
+- `DATABASE_URL` sets a PostgreSQL-compatible connection URL and overrides `DATABASE_PATH`
 - `DATABASE_PATH` changes the SQLite database path
+
+## Kubernetes
+
+`k8s/deploy.yaml` configures the app to use the `lunch` database on CockroachDB.
+The database must already exist; the app creates its tables on startup.
+
+```sh
+kubectl apply -f k8s/deploy.yaml
+```
+
+Existing SQLite reservations are not automatically transferred to CockroachDB.
 
 ## Stack
 
 - Go standard library HTTP server
 - `html/template`
 - GORM
-- SQLite for the first version
-
+- CockroachDB via PostgreSQL in Kubernetes; SQLite by default locally
