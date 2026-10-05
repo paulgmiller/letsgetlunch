@@ -38,8 +38,12 @@ Optional environment variables:
 The database must already exist; the app creates its tables on startup.
 
 ```sh
+kubectl apply -f k8s/database-access.yaml
 kubectl apply -f k8s/deploy.yaml
 ```
+
+`k8s/database-access.yaml` allows pods labeled `app: letsgetlunch` in the `lunch`
+namespace to reach CockroachDB on TCP port 26257 through its ingress policy.
 
 Existing SQLite reservations are not automatically transferred to CockroachDB.
 
